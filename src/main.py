@@ -1,103 +1,153 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-import torch
+from structlog import get_logger
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from laion_clap import CLAP_Module as ClapModel
 
-
-clap_model: ClapModel | None = None
+from logger import Logger, setup_logging
+from vector_store import generate_and_upsert_embeddings, get_similar_tracks
 
 
 class EmbeddingRequest(BaseModel):
     file_paths: list[str] = Field(..., min_length=1)
-    enable_fusion: bool = Field(default=False)
+    batch_size: int = Field(default=32, gt=0, le=128)
 
 
 class EmbeddingResponse(BaseModel):
-    embeddings: list[list[float]]
-    shape: tuple[int, int]
-    files: list[str]
-    device: str
+    success: bool
+    count: int
+    message: str
+
+
+class SimilarityRequest(BaseModel):
+    file_path: str
+    top_k: int = Field(default=20, gt=0, le=100)
+
+
+class SimilarTrack(BaseModel):
+    id: str
+    metadata: dict
+    distance: float
+
+
+class SimilarityResponse(BaseModel):
+    query_file: str
+    results: list[SimilarTrack]
+    count: int
 
 
 class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
-    device: str
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    global clap_model
-
-    if torch.cuda.is_available():
-        device = "cuda"
-        print(f"GPU detected: {torch.cuda.get_device_name(0)}")
-    else:
-        device = "cpu"
-        print("No GPU detected. Using CPU")
-
-    print("Loading CLAP model...")
-    clap_model = ClapModel(enable_fusion=False, device=device)
-    clap_model.load_ckpt()
-    print("✓ CLAP model loaded successfully")
+async def lifespan(_: FastAPI):
+    setup_logging("melodion.log")
+    logger = get_logger()
+    logger.info("Music recommender started.")
 
     yield
 
-    print("Shutting down...")
+
+app = FastAPI(
+    title="Melodion (Music Recommendation API)", version="0.1.0", lifespan=lifespan
+)
 
 
-app = FastAPI(title="Music Recommendation API", version="0.1.0", lifespan=lifespan)
-
-
-@app.get("/health", response_model=HealthResponse)
-async def health_check():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+@app.get("/v1/health", response_model=HealthResponse)
+async def health_check(logger: Logger):
+    logger.info("Health check", model_loaded=True)
     return HealthResponse(
         status="healthy",
-        model_loaded=clap_model is not None,
-        device=device,
+        model_loaded=True,
     )
 
 
-@app.post("/generate-embeddings", response_model=EmbeddingResponse)
-async def generate_embeddings(request: EmbeddingRequest):
-    if clap_model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
+@app.post("/v1/music/index", response_model=EmbeddingResponse)
+async def index_music(request: EmbeddingRequest, logger: Logger):
     invalid_files = []
     for file_path in request.file_paths:
         if not Path(file_path).exists():
             invalid_files.append(file_path)
 
     if invalid_files:
+        logger.warning("Invalid files", files=invalid_files)
         raise HTTPException(
             status_code=400,
             detail=f"Files not found: {', '.join(invalid_files)}",
         )
 
     try:
-        embeddings = clap_model.get_audio_embedding_from_filelist(
-            x=request.file_paths,
-            use_tensor=False,
+        logger.info(
+            "Indexing music files",
+            file_count=len(request.file_paths),
+            batch_size=request.batch_size,
         )
 
-        embeddings_list = embeddings.tolist()
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        result = generate_and_upsert_embeddings(
+            request.file_paths, batch_size=request.batch_size
+        )
 
+        logger.info(
+            "Music files indexed successfully",
+            count=len(result["ids"]),
+        )
         return EmbeddingResponse(
-            embeddings=embeddings_list,
-            shape=embeddings.shape,
-            files=request.file_paths,
-            device=device,
+            success=True,
+            count=len(result["ids"]),
+            message=f"Successfully indexed {len(result['ids'])} music files",
         )
 
     except Exception as e:
+        logger.error("Error indexing music files", error=str(e), exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error generating embeddings: {str(e)}",
+            detail=f"Error indexing music files: {str(e)}",
         )
 
 
+@app.post("/v1/music/similar", response_model=SimilarityResponse)
+async def find_similar(request: SimilarityRequest, logger: Logger):
+    if not Path(request.file_path).exists():
+        logger.warning("File not found", file_path=request.file_path)
+        raise HTTPException(
+            status_code=400,
+            detail=f"File not found: {request.file_path}",
+        )
+
+    try:
+        logger.info(
+            "Finding similar tracks", file_path=request.file_path, top_k=request.top_k
+        )
+
+        results = get_similar_tracks(request.file_path, n_results=request.top_k)
+
+        logger.info(
+            "Similar tracks found",
+            query_file=request.file_path,
+            count=len(results),
+        )
+
+        similar_tracks = [
+            SimilarTrack(
+                id=results["ids"][0][i],
+                metadata=results["metadatas"][0][i],
+                distance=results["distances"][0][i],
+            )
+            for i in range(len(results["ids"][0]))
+        ]
+
+        return SimilarityResponse(
+            query_file=request.file_path,
+            results=similar_tracks,
+            count=len(similar_tracks),
+        )
+
+    except Exception as e:
+        logger.error("Error finding similar tracks", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error finding similar tracks: {str(e)}",
+        )

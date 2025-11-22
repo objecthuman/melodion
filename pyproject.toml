@@ -1,5 +1,5 @@
 [project]
-name = "music-recommendation"
+name = "melodion"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -9,6 +9,7 @@ dependencies = [
     "cyclopts>=4.2.5",
     "fastapi>=0.121.3",
     "laion-clap>=1.1.7",
+    "mutagen>=1.47.0",
     "pydantic-settings>=2.12.0",
     "scikit-learn>=1.5.2",
     "structlog>=25.5.0",
