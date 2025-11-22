@@ -5,12 +5,15 @@ from structlog import get_logger
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from logger import Logger, setup_logging
-from vector_store import generate_and_upsert_embeddings, get_similar_tracks
+from src.logger import Logger, setup_logging
+from src.vector_store import generate_and_upsert_embeddings, get_similar_tracks
+from src.utils import get_audio_files
+from src.middleware import LoggerMiddleWare
 
 
 class EmbeddingRequest(BaseModel):
-    file_paths: list[str] = Field(..., min_length=1)
+    file_paths: list[str] = Field(default=[])
+    folder_path: str | None = Field(default=None)
     batch_size: int = Field(default=32, gt=0, le=128)
 
 
@@ -55,6 +58,8 @@ app = FastAPI(
     title="Melodion (Music Recommendation API)", version="0.1.0", lifespan=lifespan
 )
 
+app.add_middleware(LoggerMiddleWare)
+
 
 @app.get("/v1/health", response_model=HealthResponse)
 async def health_check(logger: Logger):
@@ -67,11 +72,16 @@ async def health_check(logger: Logger):
 
 @app.post("/v1/music/index", response_model=EmbeddingResponse)
 async def index_music(request: EmbeddingRequest, logger: Logger):
-    invalid_files = []
-    for file_path in request.file_paths:
-        if not Path(file_path).exists():
-            invalid_files.append(file_path)
+    try:
+        file_paths = get_audio_files(
+            file_paths=request.file_paths if request.file_paths else None,
+            folder_path=request.folder_path,
+        )
+    except (FileNotFoundError, NotADirectoryError, ValueError) as e:
+        logger.warning("Invalid input", error=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
+    invalid_files = [fp for fp in file_paths if not Path(fp).exists()]
     if invalid_files:
         logger.warning("Invalid files", files=invalid_files)
         raise HTTPException(
@@ -82,12 +92,13 @@ async def index_music(request: EmbeddingRequest, logger: Logger):
     try:
         logger.info(
             "Indexing music files",
-            file_count=len(request.file_paths),
+            file_count=len(file_paths),
             batch_size=request.batch_size,
+            source="file_paths" if request.file_paths else "folder_path",
         )
 
         result = generate_and_upsert_embeddings(
-            request.file_paths, batch_size=request.batch_size
+            file_paths, batch_size=request.batch_size
         )
 
         logger.info(

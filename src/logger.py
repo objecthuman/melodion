@@ -13,7 +13,7 @@ import structlog
 from fastapi import Depends, Request
 from structlog.processors import CallsiteParameter
 
-from app.config import settings
+from src.config import settings
 
 
 class TimedCompressedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):

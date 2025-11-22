@@ -5,15 +5,8 @@ import chromadb
 import torch
 from chromadb.config import Settings
 from laion_clap import CLAP_Module as ClapModel
-from mutagen._file import File as MutagenFile
 
-
-class MusicMetadata(TypedDict):
-    artist: str
-    genre: str
-    song_name: str
-    album_name: str
-    file_path: str
+from src.utils import MusicMetadata, extract_metadata
 
 
 class EmbeddingResult(TypedDict):
@@ -48,70 +41,6 @@ else:
 
 clap_model = ClapModel(enable_fusion=False, device=device)
 clap_model.load_ckpt()
-
-
-def extract_metadata(file_path: str) -> MusicMetadata:
-    try:
-        audio = MutagenFile(file_path)
-        if audio is None:
-            return MusicMetadata(
-                artist="Unknown",
-                genre="Unknown",
-                song_name=Path(file_path).stem,
-                album_name="Unknown",
-                file_path=file_path,
-            )
-
-        artist = "Unknown"
-        genre = "Unknown"
-        song_name = Path(file_path).stem
-        album_name = "Unknown"
-
-        if audio.tags:
-            artist = (
-                str(audio.tags.get("TPE1", ["Unknown"])[0])
-                if "TPE1" in audio.tags
-                else str(audio.tags.get("artist", ["Unknown"])[0])
-                if "artist" in audio.tags
-                else "Unknown"
-            )
-            genre = (
-                str(audio.tags.get("TCON", ["Unknown"])[0])
-                if "TCON" in audio.tags
-                else str(audio.tags.get("genre", ["Unknown"])[0])
-                if "genre" in audio.tags
-                else "Unknown"
-            )
-            song_name = (
-                str(audio.tags.get("TIT2", [Path(file_path).stem])[0])
-                if "TIT2" in audio.tags
-                else str(audio.tags.get("title", [Path(file_path).stem])[0])
-                if "title" in audio.tags
-                else Path(file_path).stem
-            )
-            album_name = (
-                str(audio.tags.get("TALB", ["Unknown"])[0])
-                if "TALB" in audio.tags
-                else str(audio.tags.get("album", ["Unknown"])[0])
-                if "album" in audio.tags
-                else "Unknown"
-            )
-
-        return MusicMetadata(
-            artist=artist,
-            genre=genre,
-            song_name=song_name,
-            album_name=album_name,
-            file_path=file_path,
-        )
-    except Exception:
-        return MusicMetadata(
-            artist="Unknown",
-            genre="Unknown",
-            song_name=Path(file_path).stem,
-            album_name="Unknown",
-            file_path=file_path,
-        )
 
 
 def generate_and_upsert_embeddings(
