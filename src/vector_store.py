@@ -69,6 +69,7 @@ def generate_and_upsert_embeddings(
         )
 
         batch_embeddings_list = batch_embeddings.tolist()
+        print(batch_embeddings_list)
 
         Collection.upsert(
             ids=batch_ids,

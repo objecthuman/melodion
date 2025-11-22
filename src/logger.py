@@ -101,8 +101,7 @@ def setup_logging(log_file: str):
     file_handler.setFormatter(logging.Formatter("%(message)s"))
 
     handlers = [file_handler]
-    if settings.ENV == "local":
-        handlers.append(console_handler)
+    handlers.append(console_handler)
 
     logging.basicConfig(
         level=settings.log_level,
