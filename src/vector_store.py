@@ -5,8 +5,11 @@ import chromadb
 import torch
 from chromadb.config import Settings
 from laion_clap import CLAP_Module as ClapModel
+from structlog import get_logger
 
 from src.utils import MusicMetadata, extract_metadata
+
+logger = get_logger()
 
 
 class EmbeddingResult(TypedDict):
@@ -39,6 +42,7 @@ if torch.cuda.is_available():
 else:
     device = "cpu"
 
+
 clap_model = ClapModel(enable_fusion=False, device=device)
 clap_model.load_ckpt()
 
@@ -48,9 +52,17 @@ def generate_and_upsert_embeddings(
 ) -> EmbeddingResult:
     all_metadatas = []
     all_ids = []
+    total_batches = (len(file_paths) + batch_size - 1) // batch_size
 
-    for i in range(0, len(file_paths), batch_size):
+    for batch_num, i in enumerate(range(0, len(file_paths), batch_size), 1):
         batch_paths = file_paths[i : i + batch_size]
+
+        logger.info(
+            "Processing batch",
+            batch=batch_num,
+            total_batches=total_batches,
+            batch_size=len(batch_paths),
+        )
 
         batch_metadatas = []
         batch_ids = []
@@ -69,12 +81,18 @@ def generate_and_upsert_embeddings(
         )
 
         batch_embeddings_list = batch_embeddings.tolist()
-        print(batch_embeddings_list)
 
         Collection.upsert(
             ids=batch_ids,
             embeddings=batch_embeddings_list,
             metadatas=batch_metadatas,
+        )
+
+        logger.info(
+            "Batch upserted",
+            batch=batch_num,
+            total_batches=total_batches,
+            upserted_count=len(batch_ids),
         )
 
         all_metadatas.extend(batch_metadatas)

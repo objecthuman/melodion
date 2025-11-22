@@ -70,7 +70,7 @@ async def health_check(logger: Logger):
     )
 
 
-@app.post("/v1/music/index", response_model=EmbeddingResponse)
+@app.post("/v1/music/index", response_model=EmbeddingResponse | None)
 async def index_music(request: EmbeddingRequest, logger: Logger):
     try:
         file_paths = get_audio_files(
