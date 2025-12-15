@@ -48,9 +48,7 @@ class HealthResponse(BaseModel):
     model_loaded: bool
 
 
-async def worker_process_manager():
-    logger = get_logger()
-
+async def worker_process_manager(logger: Logger):
     while True:
         try:
             logger.info("Starting worker process", scan_interval=settings.SCAN_INTERVAL)
@@ -84,10 +82,10 @@ async def worker_process_manager():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     setup_logging("melodion.log")
-    logger = get_logger()
+    logger: Logger = get_logger()
     logger.info("Music recommender started.")
 
-    worker_task = asyncio.create_task(worker_process_manager())
+    worker_task = asyncio.create_task(worker_process_manager(logger))
     logger.info("Worker process manager started")
 
     yield
@@ -114,55 +112,6 @@ async def health_check(logger: Logger):
         status="healthy",
         model_loaded=True,
     )
-
-
-@app.post("/v1/music/index", response_model=EmbeddingResponse | None)
-async def index_music(request: EmbeddingRequest, logger: Logger):
-    try:
-        file_paths = get_audio_files(
-            file_paths=request.file_paths if request.file_paths else None,
-            folder_path=request.folder_path,
-        )
-    except (FileNotFoundError, NotADirectoryError, ValueError) as e:
-        logger.warning("Invalid input", error=str(e))
-        raise HTTPException(status_code=400, detail=str(e))
-
-    invalid_files = [fp for fp in file_paths if not Path(fp).exists()]
-    if invalid_files:
-        logger.warning("Invalid files", files=invalid_files)
-        raise HTTPException(
-            status_code=400,
-            detail=f"Files not found: {', '.join(invalid_files)}",
-        )
-
-    try:
-        logger.info(
-            "Indexing music files",
-            file_count=len(file_paths),
-            batch_size=request.batch_size,
-            source="file_paths" if request.file_paths else "folder_path",
-        )
-
-        result = generate_and_upsert_embeddings(
-            file_paths, batch_size=request.batch_size
-        )
-
-        logger.info(
-            "Music files indexed successfully",
-            count=len(result["ids"]),
-        )
-        return EmbeddingResponse(
-            success=True,
-            count=len(result["ids"]),
-            message=f"Successfully indexed {len(result['ids'])} music files",
-        )
-
-    except Exception as e:
-        logger.error("Error indexing music files", error=str(e), exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error indexing music files: {str(e)}",
-        )
 
 
 @app.post("/v1/music/similar", response_model=SimilarityResponse)
