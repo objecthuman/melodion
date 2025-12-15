@@ -1,3 +1,5 @@
+import asyncio
+import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -5,6 +7,7 @@ from structlog import get_logger
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from src.config import settings
 from src.logger import Logger, setup_logging
 from src.vector_store import generate_and_upsert_embeddings, get_similar_tracks
 from src.utils import get_audio_files
@@ -45,13 +48,56 @@ class HealthResponse(BaseModel):
     model_loaded: bool
 
 
+async def worker_process_manager():
+    logger = get_logger()
+
+    while True:
+        try:
+            logger.info("Starting worker process", scan_interval=settings.SCAN_INTERVAL)
+
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "src.worker",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode == 0:
+                logger.info("Worker process completed successfully")
+            else:
+                logger.error(
+                    "Worker process failed",
+                    return_code=process.returncode,
+                    stderr=stderr.decode() if stderr else None,
+                )
+
+        except Exception as e:
+            logger.error("Error running worker process", error=str(e), exc_info=True)
+
+        logger.info("Waiting for next scan", interval=settings.SCAN_INTERVAL)
+        await asyncio.sleep(settings.SCAN_INTERVAL)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     setup_logging("melodion.log")
     logger = get_logger()
     logger.info("Music recommender started.")
 
+    worker_task = asyncio.create_task(worker_process_manager())
+    logger.info("Worker process manager started")
+
     yield
+
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        logger.info("Worker process manager cancelled")
+        pass
 
 
 app = FastAPI(
@@ -98,7 +144,7 @@ async def index_music(request: EmbeddingRequest, logger: Logger):
         )
 
         result = generate_and_upsert_embeddings(
-            file_paths, batch_size=request.batch_size, folder_path=request.folder_path
+            file_paths, batch_size=request.batch_size
         )
 
         logger.info(
