@@ -12,18 +12,18 @@ logger = get_logger()
 
 
 def scan_and_index_new_music():
-    if not settings.MUSIC_LIBRARIES:
+    if not settings.music_libraries:
         logger.warning("No music libraries configured, skipping scan")
         return
 
     logger.info(
         "Starting music library scan",
-        libraries=settings.MUSIC_LIBRARIES,
+        libraries=settings.music_libraries,
         scan_interval=settings.SCAN_INTERVAL,
     )
 
     all_music_files = []
-    for directory in settings.MUSIC_LIBRARIES:
+    for directory in settings.music_libraries:
         try:
             dir_path = Path(directory)
             if not dir_path.exists():

@@ -10,21 +10,24 @@ class Settings(BaseSettings):
         default="info"
     )
 
-    MUSIC_LIBRARIES: list[str] = Field(
-        default_factory=list,
-        description="List of music library directories to scan for music files"
+    MUSIC_LIBRARIES: str = Field(
+        default_factory=str,
+        description="List of music library directories to scan for music files",
     )
 
     SCAN_INTERVAL: int = Field(
         default=3600,
-        description="Interval in seconds between automatic scans for new music files"
+        description="Interval in seconds between automatic scans for new music files",
     )
 
+    @property
+    def music_libraries(self):
+        return [
+            path.strip() for path in self.MUSIC_LIBRARIES.split(",") if path.strip()
+        ]
+
     BATCH_SIZE: int = Field(
-        default=32,
-        gt=0,
-        le=128,
-        description="Batch size for processing embeddings"
+        default=32, gt=0, le=128, description="Batch size for processing embeddings"
     )
 
     @property

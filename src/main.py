@@ -120,7 +120,7 @@ async def find_similar(request: SimilarityRequest, logger: Logger):
     if Path(request.file_path).is_absolute() and Path(request.file_path).exists():
         full_file_path = request.file_path
     else:
-        for library_path in settings.MUSIC_LIBRARIES:
+        for library_path in settings.music_libraries:
             candidate_path = Path(library_path) / request.file_path
             if candidate_path.exists():
                 full_file_path = str(candidate_path)
@@ -150,9 +150,9 @@ async def find_similar(request: SimilarityRequest, logger: Logger):
         for i in range(len(results["ids"][0])):
             metadata = results["metadatas"][0][i].copy()
 
-            if "file_path" in metadata and settings.MUSIC_LIBRARIES:
+            if "file_path" in metadata and settings.music_libraries:
                 file_path = metadata["file_path"]
-                for library_path in settings.MUSIC_LIBRARIES:
+                for library_path in settings.music_libraries:
                     library_path_obj = Path(library_path)
                     file_path_obj = Path(file_path)
                     try:
