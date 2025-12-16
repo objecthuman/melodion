@@ -4,7 +4,7 @@ A simple music clustering tool that groups music based on similarity.
 
 ## Overview
 
-Melodion uses [CLAP](https://github.com/LAION-AI/CLAP) as the inference model to generate audio file embeddings. It can be used directly with [navidrome](https://github.com/objecthuman/navidrome) (our custom version) to queue similar music when playing.
+Melodion uses [CLAP](https://github.com/LAION-AI/CLAP) as the inference model to generate audio file embeddings. Its main purpose is to work with [navidrome](https://github.com/objecthuman/navidrome) (our custom version) to queue similar music when playing.
 
 ## Installation
 
